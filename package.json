@@ -1,0 +1,56 @@
+{
+ "name": "sydney-ai",
+ "version": "1.0.0",
+ "description": "a NodeJS Client for Sydney AI ChatBOT (bing.com)",
+ "main": "dist/index.js",
+ "scripts": {
+  "test": "node examples/cli.js"
+ },
+ "repository": {
+  "type": "git",
+  "url": "git+https://github.com/PawanOsman/sydney-ai.git"
+ },
+ "author": "PawanOsman <contact@pawan.krd> (https://pawan.krd/)",
+ "keywords": [
+  "chatgpt",
+  "gpt3",
+  "gpt",
+  "Language",
+  "model",
+  "Natural",
+  "language",
+  "processing",
+  "(NLP)",
+  "Dialogue",
+  "generation",
+  "Conversation",
+  "Chatbot",
+  "Generative",
+  "Pre-trained",
+  "Transformer",
+  "(GPT)",
+  "Artificial",
+  "intelligence",
+  "(AI)",
+  "Machine",
+  "learning",
+  "(ML)",
+  "Pre-training",
+  "Transfer",
+  "learning",
+  "Text",
+  "generation",
+  "Text",
+  "prediction",
+  "OpenAI"
+ ],
+ "license": "MIT",
+ "bugs": {
+  "url": "https://github.com/PawanOsman/sydney-ai/issues"
+ },
+ "homepage": "https://github.com/PawanOsman/sydney-ai#readme",
+ "dependencies": {
+  "@microsoft/signalr": "7.0.2",
+  "axios": "1.3.2"
+ }
+}
