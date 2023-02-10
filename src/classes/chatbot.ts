@@ -1,52 +1,23 @@
-import axios from "axios";
-import crypto from "crypto";
-import signalR from "@microsoft/signalr";
 import Options from "../models/options.js";
-import Conversation from "../models/conversation.js";
+import Conversation from "./conversation.js";
 import SocketMessageObject from "../models/socketMessageObject.js";
+import Status from "../enums/status.js";
 
 class ChatBot {
 	public token: string;
 	public options: Options;
-	public connection: signalR.HubConnection;
 	public conversations: Conversation[] = [];
+
 	constructor(token: string, options?: Options) {
 		this.token = token;
-		this.options = {};
-
-		this.connection = new signalR.HubConnectionBuilder().withUrl("https://sydney.bing.com/sydney/ChatHub").build();
-
-		this.connection.on("send", (data) => {
-			console.log(data);
-		});
-
-		this.connection.start();
-	}
-
-	public async createConversation(): Promise<Conversation> {
-		let response = await axios.post("https://www.bing.com/turing/conversation/create", {
-			headers: {
-				accept: "application/json",
-				"content-type": "application/json",
-				"x-ms-client-request-id": crypto.randomUUID(),
-				"x-ms-useragent": "azsdk-js-api-client-factory/1.0.0-beta.1 core-rest-pipeline/1.10.0 OS/Win32",
-				cookie: `_U=${this.token}`,
-				Referer: "https://www.bing.com/search?q=Bing+AI&showconv=1&FORM=hpcodx&iscopilotedu=1&form=MA13GA",
-			},
-		});
-
-		return {
-			conversationSignature: response.data.conversationSignature,
-			conversationId: response.data.conversationId,
-			clientId: response.data.clientId,
+		this.options = {
+			revProxy: options?.revProxy,
 		};
 	}
 
 	public async addConversation(conversationId: string) {
-		let conversation = await this.createConversation();
-		conversation.id = conversationId;
-		conversation.lastActivity = Date.now();
-		conversation.isStartOfSession = true;
+		let conversation = new Conversation(conversationId, this.token, this.options.revProxy);
+		await conversation.waitForReady();
 		this.conversations.push(conversation);
 		return conversation;
 	}
@@ -62,8 +33,14 @@ class ChatBot {
 		return conversation;
 	}
 
-	public async sendMessage(prompt: string, conversationId: string = "default") {
+	public async ask(prompt: string, conversationId: string = "default") {
 		let conversation = await this.getConversation(conversationId);
+
+		if (conversation.status === Status.Inactive) throw new Error("Conversation is inactive");
+		if (conversation.status === Status.Busy) throw new Error("Conversation is busy");
+
+		conversation.status = Status.Busy;
+
 		let request: SocketMessageObject = {
 			source: "cib",
 			conversationId: conversation.conversationId,
@@ -80,8 +57,76 @@ class ChatBot {
 			},
 			optionsSets: ["nlu_direct_response_filter", "deepleo", "enable_debug_commands", "disable_emoji_spoken_text", "responsible_ai_policy_235", "enablemm"],
 		};
+
 		conversation.isStartOfSession = false;
-		return await this.connection.invoke("chat", request);
+
+		return await new Promise<string>((resolve) => {
+			conversation.connection.stream("chat", request).subscribe({
+				next: (item) => {
+					resolve(item.messages[1].text);
+					conversation.status = Status.Idle;
+				},
+				complete: () => {},
+				error: (error) => {
+					console.error(error);
+				},
+			});
+		});
+	}
+
+	public async askStream(data: (arg0: string) => void, prompt: string, conversationId: string = "default") {
+		let conversation = await this.getConversation(conversationId);
+
+		if (conversation.status === Status.Inactive) {
+			await conversation.connect();
+		}
+
+		if (conversation.status === Status.Busy) throw new Error("Conversation is busy");
+
+		conversation.status = Status.Busy;
+
+		let request: SocketMessageObject = {
+			source: "cib",
+			conversationId: conversation.conversationId,
+			conversationSignature: conversation.conversationSignature,
+			isStartOfSession: conversation.isStartOfSession,
+			message: {
+				author: "user",
+				text: prompt,
+				inputMethod: "Keyboard",
+				messageType: "Chat",
+			},
+			participant: {
+				id: conversation.clientId,
+			},
+			optionsSets: ["nlu_direct_response_filter", "deepleo", "enable_debug_commands", "disable_emoji_spoken_text", "responsible_ai_policy_235", "enablemm"],
+		};
+
+		conversation.isStartOfSession = false;
+
+		let currentMessage = "";
+
+		conversation.connection.on("update", (value) => {
+			let chunk = value.messages[0].text.replace(currentMessage, "");
+			if (chunk.length > 0 && chunk !== "\n") {
+				currentMessage = value.messages[0].text;
+				data(chunk);
+			}
+		});
+
+		return await new Promise<string>((resolve) => {
+			conversation.connection.stream("chat", request).subscribe({
+				next: (item) => {
+					resolve(item.messages[1].text);
+					conversation.status = Status.Idle;
+					conversation.connection.off("update");
+				},
+				complete: () => {},
+				error: (error) => {
+					console.error(error);
+				},
+			});
+		});
 	}
 }
 
